@@ -49,6 +49,7 @@
 
 (defvar hermes-chat-dashboard-session-title)
 (defvar hermes-chat-use-dashboard-transport)
+(defvar hermes-chat-let-server-name-sessions)
 
 (defvar hermes-chat--active-tools)
 (defvar hermes-chat--pending-assistant-id)
