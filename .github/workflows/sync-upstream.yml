@@ -1,0 +1,39 @@
+name: sync-upstream
+
+# Upstream lives on Thanos Apollo's own forge, so GitHub's fork button cannot
+# reach it.  This job keeps `master` an exact mirror of upstream and merges it
+# into `main`, which is our default branch and the one users install from.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: master
+
+      - name: Fast-forward master, then merge it into main
+        run: |
+          set -euo pipefail
+          git config user.name "mayphus-sync"
+          git config user.email "sync@mayphus.org"
+          git remote add upstream https://git.thanosapollo.org/emacs-hermes
+          git fetch --no-tags upstream master
+          git merge --ff-only FETCH_HEAD
+          git push origin master
+          git checkout main
+          git merge --no-edit --no-ff master -m "merge upstream $(git rev-parse --short FETCH_HEAD)"
+          git push origin main
