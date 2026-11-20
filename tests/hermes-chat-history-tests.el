@@ -130,8 +130,7 @@
 
 (ert-deftest hermes-chat-resume-renders-prior-messages ()
   "Resuming renders history and later backend-owned turns without duplicates."
-  (let ((client (hermes-test--dashboard-client))
-        (hermes-chat-show-tool-calls t))
+  (let ((client (hermes-test--dashboard-client)))
     (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) client))
               ((symbol-function 'hermes-notifications-notify) #'ignore)
@@ -1969,7 +1968,7 @@ the second pass keeps the very same nodes and text."
       (should (= (length (hermes-chat--entries)) 801)))))
 
 
-(ert-deftest hermes-chat-history-hides-tool-rows-by-default ()
+(ert-deftest hermes-chat-history-hides-tool-rows-when-off ()
   "A past tool row reaches the transcript only when tool calls are shown."
   (hermes-test-with-rewind-chat (_submits _reads _prompts)
     (let ((hermes-chat-show-tool-calls nil))
@@ -1995,6 +1994,21 @@ the second pass keeps the very same nodes and text."
       (should-not (hermes-chat--turn-entry-effect event)))
     (let ((hermes-chat-show-tool-calls t))
       (should (eq (car (hermes-chat--turn-entry-effect event)) 'upsert-entry)))))
+
+(ert-deftest hermes-chat-history-repaint-drops-unanchored-tool-rows ()
+  "A repaint drops a past tool row no live card anchors to."
+  (hermes-test-with-rewind-chat (_submits _reads _prompts)
+    (let ((hermes-chat-show-tool-calls nil))
+      (hermes-chat--insert-entry (hermes-chat--make-entry 'user "Q" 'done))
+      (hermes-chat--repaint-history
+       (append hermes-test-rewind-history
+               '(((role . "user") (text . "Q") (row_id . 31))
+                 ((role . "tool") (name . "terminal") (context . "$ ls")
+                  (tool_call_id . "call-x"))
+                 ((role . "assistant") (text . "A"))))
+       (copy-hash-table hermes-chat--nodes))
+      (should-not (seq-find (lambda (entry) (eq (plist-get entry :role) 'tool))
+                            (hermes-chat--entries))))))
 
 
 (provide 'hermes-chat-history-tests)

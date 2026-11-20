@@ -92,10 +92,10 @@ which also keeps the auto-titler from ever replacing it."
   :type 'boolean
   :group 'hermes)
 
-(defcustom hermes-chat-show-tool-calls nil
+(defcustom hermes-chat-show-tool-calls t
   "Whether the transcript shows a row for every tool the agent runs.
 Nil keeps tool rows out of the buffer, live and in resumed history; the
-header still reports what the turn is doing.  See
+header still reports what the turn is doing.  Toggle with
 `hermes-chat-toggle-tool-calls'."
   :type 'boolean
   :group 'hermes)
