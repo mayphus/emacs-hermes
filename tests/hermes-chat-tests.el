@@ -322,16 +322,24 @@
           (should (equal (hermes-chat--dashboard-create-title)
                          "emacs-hermes--20260807T183045.000000Z--emacs")))))))
 
-(ert-deftest hermes-chat-prompts-profile-and-names-buffer ()
-  "M-x hermes-chat reads a profile and names the buffer after it."
-  (cl-letf (((symbol-function 'hermes-chat--read-profile)
-             (lambda () "coder")))
-    (let ((buffer (call-interactively #'hermes-chat)))
-      (unwind-protect
-          (with-current-buffer buffer
-            (should (equal hermes-chat--profile "coder"))
-            (should (string-prefix-p "*Hermes@coder" (buffer-name))))
-        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+(ert-deftest hermes-chat-interactive-uses-default-profile ()
+  "Interactive `hermes-chat' opens the default profile and does not prompt."
+  (let ((instance '("local" . "http://127.0.0.1:9119"))
+        prompted)
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () instance))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) (setq prompted t) ""))
+              ((symbol-function 'read-string)
+               (lambda (&rest _) (setq prompted t) "")))
+      (let ((buffer (call-interactively #'hermes-chat)))
+        (unwind-protect
+            (with-current-buffer buffer
+              (should-not prompted)
+              (should-not hermes-chat--profile)
+              (should (equal hermes-instance instance))
+              (should (string-prefix-p "*Hermes@default" (buffer-name))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (ert-deftest hermes-chat-uses-current-default-directory ()
   "A new chat keeps the directory of the buffer that launched it."
@@ -737,22 +745,20 @@
          (should (string-match-p "Queued message retained: sync create boom"
                                  (buffer-string))))))))
 
-(ert-deftest hermes-chat-selects-instance-before-profile ()
-  "Interactive chat selection pins the instance used to read its profile."
+(ert-deftest hermes-chat-interactive-ignores-profile-reader ()
+  "Interactive chat pins the resolved instance and never reads a profile."
   (let ((instance '("remote" . "https://hermes.example.test"))
-        profile-instance)
+        read-profile)
     (cl-letf (((symbol-function 'hermes-instance-resolve)
                (lambda () instance))
               ((symbol-function 'hermes-chat--read-profile)
-               (lambda ()
-                 (setq profile-instance hermes-instance)
-                 "coder")))
+               (lambda () (setq read-profile t) "coder")))
       (let ((buffer (call-interactively #'hermes-chat)))
         (unwind-protect
             (with-current-buffer buffer
-              (should (equal profile-instance instance))
               (should (equal hermes-instance instance))
-              (should (equal hermes-chat--profile "coder")))
+              (should-not read-profile)
+              (should-not hermes-chat--profile))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (ert-deftest hermes-chat-blank-profile-names-buffer-default ()
@@ -3389,25 +3395,23 @@ DEL still keeps its global deleting meaning there."
       (should (equal (hermes-chat--read-profile) "elisp-dev"))
       (should-not spawned))))
 
-(ert-deftest hermes-chat-completes-dashboard-profile ()
-  "Interactively creating a chat chooses from the warmed profile cache."
-  (let ((hermes-dashboard-transport--profile-cache nil) choices)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
-               (lambda () "http://dash.example"))
+(ert-deftest hermes-chat-interactive-ignores-profile-cache ()
+  "Interactively creating a chat does not choose from the profile cache."
+  (let ((hermes-dashboard-transport--profile-cache nil)
+        prompted)
+    (cl-letf (((symbol-function 'hermes-instance-resolve)
+               (lambda () '("local" . "http://127.0.0.1:9119")))
               ((symbol-function 'completing-read)
-               (lambda (_prompt collection &rest _)
-                 (setq choices collection)
-                 (cl-find "elisp-dev" collection :test #'string-match-p))))
+               (lambda (&rest _) (setq prompted t) "elisp-dev")))
       (hermes-dashboard-transport--store-profile-cache
        '((profiles . (((name . "default") (is_default . t))
                       ((name . "elisp-dev")
                        (description . "Emacs Lisp work"))))))
       (let ((buffer (call-interactively #'hermes-chat)))
         (unwind-protect
-            (progn
-              (should (cl-find "default" choices :test #'string-match-p))
-              (with-current-buffer buffer
-                (should (equal hermes-chat--profile "elisp-dev"))))
+            (with-current-buffer buffer
+              (should-not prompted)
+              (should-not hermes-chat--profile))
           (kill-buffer buffer))))))
 
 (ert-deftest hermes-chat-send-passes-profile-to-session-create ()
@@ -3432,20 +3436,9 @@ DEL still keeps its global deleting meaning there."
          (should (equal create-profile "work")))))))
 
 (ert-deftest hermes-chat-blank-profile-fallback-uses-default-session-profile ()
-  "Blank raw fallback input leaves session.create profile omitted."
-  (let ((hermes-dashboard-transport--profile-cache nil)
-        create-profile fetched)
-    (cl-letf (((symbol-function 'hermes-chat--existing-dashboard-client)
-               (lambda () 'fake-client))
-              ((symbol-function 'hermes-dashboard-transport-profile-list-async)
-               (lambda (client)
-                 (setq fetched client)
-                 (hermes--promise-rejected "404 not found")))
-              ((symbol-function 'read-string)
-               (lambda (&rest _) "   "))
-              ((symbol-function 'message)
-               (lambda (&rest _) nil))
-              ((symbol-function 'hermes-transport-send)
+  "A chat opened without a profile omits session.create's profile."
+  (let (create-profile)
+    (cl-letf (((symbol-function 'hermes-transport-send)
                (lambda (&rest _) (error "CLI fallback should not run")))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) (hermes-test--dashboard-client)))
@@ -3457,10 +3450,9 @@ DEL still keeps its global deleting meaning there."
               ((symbol-function 'hermes-dashboard-transport-prompt-submit)
                (lambda (&rest _) nil)))
       (let ((hermes-transport-send-function #'hermes-transport-send)
-            (buffer (call-interactively #'hermes-chat)))
+            (buffer (hermes-chat nil)))
         (unwind-protect
             (with-current-buffer buffer
-              (should (eq fetched 'fake-client))
               (should-not hermes-chat--profile)
               (insert "hello")
               (hermes-chat-send)

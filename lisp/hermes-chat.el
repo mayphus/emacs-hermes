@@ -4256,16 +4256,14 @@ depth so a globalized linter re-enabled after the mode body is overridden."
 ;;;###autoload
 (defun hermes-chat (&optional profile instance)
   "Open a new Hermes chat buffer under agent PROFILE.
-INSTANCE selects the owning Hermes instance.  Interactively resolve the
-instance first, then prompt for PROFILE (blank uses the dashboard default).
+INSTANCE selects the owning Hermes instance.  Interactively, open the
+dashboard default profile and do not prompt.  A non-interactive PROFILE
+is still honored.
 Each call opens a distinct buffer named after the profile -- and, once the
 session is titled, after that title -- so chats stay filterable with
 `hermes-switch-to-chat'."
   (interactive
-   (let ((instance (hermes-instance-resolve)))
-     (let ((hermes-instance instance)
-           (hermes-dashboard-transport-url (hermes-instance-url instance)))
-       (list (hermes-chat--read-profile) instance))))
+   (list nil (hermes-instance-resolve)))
   (hermes-chat--new-buffer profile nil instance))
 
 (defun hermes-chat--new-command (title)
