@@ -2805,6 +2805,7 @@ DEL still keeps its global deleting meaning there."
 
 (ert-deftest hermes-chat-dashboard-streams-events-into-ewoc ()
   (let ((client (hermes-test--dashboard-client))
+        (hermes-chat-show-tool-calls t)
         callback)
     (cl-letf (((symbol-function 'hermes-transport-send)
                (lambda (&rest _args) (error "CLI fallback should not run")))
