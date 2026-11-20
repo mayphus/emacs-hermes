@@ -3729,6 +3729,20 @@ indicator is on, and not at all when it is off."
              (should (equal (alist-get 'cwd wire) "/selected"))
            (should-not (assq 'cwd wire))))))))
 
+(ert-deftest hermes-chat-fresh-session-defers-its-title-to-the-server ()
+  "A fresh chat is created untitled so Hermes can name the session."
+  (hermes-test-with-chat-buffer
+   (should-not (plist-get (hermes-chat--dashboard-create-params) :title))
+   (let ((hermes-chat-let-server-name-sessions nil))
+     (should (string-match-p "--emacs\\'"
+                             (plist-get (hermes-chat--dashboard-create-params) :title))))
+   (setq hermes-chat--title "chosen label")
+   (should (equal "chosen label"
+                  (plist-get (hermes-chat--dashboard-create-params) :title)))
+   (let ((hermes-chat-let-server-name-sessions nil))
+     (should (equal "chosen label"
+                    (plist-get (hermes-chat--dashboard-create-params) :title))))))
+
 (ert-deftest hermes-chat-profile-cwd-inherited-create-paths ()
   "Prompt, control and queued bootstrap omit inherited cwd on the real wire."
   (dolist (path '(prompt control queued))

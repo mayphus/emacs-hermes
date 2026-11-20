@@ -82,6 +82,16 @@ Inside a project, its root basename becomes the canonical session label."
   :type 'string
   :group 'hermes)
 
+(defcustom hermes-chat-let-server-name-sessions t
+  "Whether a new chat lets Hermes name its session.
+When non-nil, a fresh session is created without a title, so the server's
+auto-titler names it from the first message and the chat buffer adopts that
+name once the turn settles.  When nil, the session is created under the
+canonical `LABEL--TIMESTAMP--emacs' title that keeps server titles unique,
+which also keeps the auto-titler from ever replacing it."
+  :type 'boolean
+  :group 'hermes)
+
 (defface hermes-chat-user-input
   '((t :inherit highlight))
   "Face for submitted user turns in the chat transcript."

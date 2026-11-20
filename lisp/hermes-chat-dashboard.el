@@ -2477,11 +2477,15 @@ owner is released once its receipt arrives."
             (funcall attach)))))))
 
 (defun hermes-chat--dashboard-create-title ()
-  "Return the canonical title for a fresh dashboard session."
+  "Return the canonical title for a fresh dashboard session.
+Nil leaves the session untitled so Hermes names it, which happens unless
+`hermes-chat-let-server-name-sessions' is nil or this chat already carries a
+title of its own."
   (or hermes-chat--title
-      (hermes-session-title-canonicalize
-       (hermes-session-title-project-label
-        hermes-chat-dashboard-session-title))))
+      (unless hermes-chat-let-server-name-sessions
+        (hermes-session-title-canonicalize
+         (hermes-session-title-project-label
+          hermes-chat-dashboard-session-title)))))
 
 (defun hermes-chat--dashboard-action-rejecter
     (buffer client generation reject &optional session-id)

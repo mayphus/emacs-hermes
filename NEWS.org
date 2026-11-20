@@ -21,6 +21,12 @@ Incompatible changes:
 
 New features and fixes:
 
+- New chats are created untitled, so Hermes names the session from the first
+  message and the chat adopts that name instead of the timestamped
+  =Hermes Chat--…--emacs= placeholder the server's auto-titler will not touch.
+  =hermes-chat-let-server-name-sessions= turns the old canonical labels back
+  on.
+
 - Image files dropped onto a chat buffer are staged as draft images through the
   same path as the image picker.  A drop on another Hermes view attaches only
   when a single chat is open, so an ambiguous drop never picks a conversation,
