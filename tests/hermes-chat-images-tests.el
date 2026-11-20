@@ -1167,5 +1167,98 @@
           (with-current-buffer recovery (setq kill-buffer-query-functions nil))
           (kill-buffer recovery))))))
 
+(ert-deftest hermes-images-dnd-path-accepts-drag-url-spellings ()
+  "Local drops arrive as file: URLs in several spellings."
+  (let ((file (make-temp-file "hermes-dnd" nil ".png")))
+    (unwind-protect
+        (progn
+          (should (equal (hermes-chat--dnd-path (concat "file:" file)) file))
+          (should (equal (hermes-chat--dnd-path (concat "file://" file)) file))
+          (should-not (hermes-chat--dnd-path (concat "file:" file ".missing")))
+          (should-not (hermes-chat--dnd-path "https://example.invalid/a.png")))
+      (delete-file file))))
+
+(ert-deftest hermes-images-dnd-image-file-p-follows-bytes ()
+  "Only files whose contents are a supported image are attached."
+  (let ((image (make-temp-file "hermes-dnd" nil ".dat"))
+        (text (make-temp-file "hermes-dnd" nil ".png")))
+    (unwind-protect
+        (progn
+          (with-temp-file image
+            (set-buffer-multibyte nil)
+            (insert hermes-images-test-png))
+          (with-temp-file text (insert "not an image\n"))
+          (should (hermes-chat--dnd-image-file-p image))
+          (should-not (hermes-chat--dnd-image-file-p text)))
+      (delete-file image)
+      (delete-file text))))
+
+(ert-deftest hermes-images-dnd-targets-chat-and-sole-view ()
+  "A chat is its own target; another Hermes view needs a single chat."
+  (hermes-test-with-chat-buffer
+   (let ((chat (current-buffer))
+         (plain (get-buffer-create " *hermes dnd plain*"))
+         (view (get-buffer-create " *hermes dnd view*")))
+     (unwind-protect
+         (progn
+           (should (eq (hermes-chat--dnd-chat-buffer chat) chat))
+           (with-current-buffer plain (setq major-mode 'fundamental-mode))
+           (should-not (hermes-chat--dnd-chat-buffer plain))
+           (with-current-buffer view (setq major-mode 'hermes-dashboard-mode))
+           (should (eq (hermes-chat--dnd-chat-buffer view) chat))
+           ;; A second chat makes the view's drop ambiguous.
+           (hermes-test-with-chat-buffer
+            (should-not (hermes-chat--dnd-chat-buffer view))
+            (should (eq (hermes-chat--dnd-chat-buffer (current-buffer))
+                        (current-buffer)))))
+       (kill-buffer plain)
+       (kill-buffer view)))))
+
+(ert-deftest hermes-images-dnd-attaches-dropped-image ()
+  "A dropped image file is staged as a draft image, not opened."
+  (let ((file (make-temp-file "hermes-dnd" nil ".png")))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (set-buffer-multibyte nil)
+            (insert hermes-images-test-png))
+          (hermes-images-test-with-chat-buffer
+           (should (= 0 (length hermes-chat--draft-images)))
+           (should (eq 'copy
+                       (hermes-chat--dnd-handle-multiple-urls
+                        (lambda (&rest _) (error "Drop must not fall through"))
+                        (selected-window) (list (concat "file:" file)) 'copy)))
+           (should (= 1 (length hermes-chat--draft-images)))
+           (hermes-chat-remove-image 1)
+           (should (= 0 (length hermes-chat--draft-images)))))
+      (delete-file file))))
+
+(ert-deftest hermes-images-dnd-leaves-other-drops-alone ()
+  "Non-image drops, and a disabled option, keep their ordinary meaning."
+  (let ((file (make-temp-file "hermes-dnd" nil ".txt")))
+    (unwind-protect
+        (progn
+          (with-temp-file file (insert "notes\n"))
+          (hermes-images-test-with-chat-buffer
+           (let ((orig (lambda (&rest _) 'private)))
+             (should (eq 'private
+                         (hermes-chat--dnd-handle-multiple-urls
+                          orig (selected-window) (list (concat "file:" file))
+                          'private)))
+             (let ((hermes-chat-image-drag-and-drop nil)
+                   (image (make-temp-file "hermes-dnd" nil ".png")))
+               (unwind-protect
+                   (progn
+                     (with-temp-file image
+                       (set-buffer-multibyte nil)
+                       (insert hermes-images-test-png))
+                     (should (eq 'private
+                                 (hermes-chat--dnd-handle-multiple-urls
+                                  orig (selected-window)
+                                  (list (concat "file:" image)) 'private))))
+                 (delete-file image))))
+           (should (= 0 (length hermes-chat--draft-images)))))
+      (delete-file file))))
+
 (provide 'hermes-chat-images-tests)
 ;;; hermes-chat-images-tests.el ends here

@@ -21,6 +21,11 @@ Incompatible changes:
 
 New features and fixes:
 
+- Image files dropped onto a chat buffer are staged as draft images through the
+  same path as the image picker.  A drop on another Hermes view attaches only
+  when a single chat is open, so an ambiguous drop never picks a conversation,
+  and drops that are not images keep their ordinary Emacs meaning.
+  =hermes-chat-image-drag-and-drop= disables the interception.
 - Session browser delete, archive/unarchive, rename and pin/unpin send the
   mutation identity and revision required by current Hermes backends,
   fixing =409 client_upgrade_required= errors.

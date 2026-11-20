@@ -33,6 +33,8 @@
 (require 'cl-lib)
 (require 'image)
 (require 'select)
+(require 'seq)
+(require 'url-util)
 (require 'hermes-chat-buffer)
 (require 'hermes-dashboard-rpc)
 
@@ -285,6 +287,85 @@ Signal a user error when this graphical backend has no PNG selection."
     (unless (stringp bytes)
       (user-error "No PNG clipboard data; attach a local image file instead"))
     (hermes-chat--image-stage bytes)))
+
+(defcustom hermes-chat-image-drag-and-drop t
+  "Whether dropping an image file onto Hermes attaches it to the draft.
+The chat buffer under the pointer receives the image.  A read-only Hermes view
+has no composer, so it receives the image only when it belongs to a single open
+chat buffer; with several open an ambiguous drop must not choose a conversation,
+and there the file is opened as usual.  Drops that are not images are never
+intercepted."
+  :type 'boolean
+  :group 'hermes)
+
+(defun hermes-chat--dnd-path (url)
+  "Return the local file name URL names, or nil when it names no file.
+Accept the \"file:\", \"file://\" and \"file:///\" spellings drag sources
+produce, and decode percent escapes."
+  (when (string-match "\\`file:\\(.*\\)\\'" url)
+    (let* ((rest (match-string 1 url))
+           (path (url-unhex-string
+                  (if (string-prefix-p "//" rest)
+                      (replace-regexp-in-string "\\`//[^/]*" "" rest)
+                    rest))))
+      (and (not (string-empty-p path))
+           (file-regular-p path)
+           path))))
+
+(defun hermes-chat--dnd-image-file-p (path)
+  "Return non-nil when the file at PATH begins with supported image bytes.
+The bytes decide, as they do for the clipboard and the file picker, so a
+renamed file is not attached as an image and an extension-less one still is."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (condition-case nil
+        (progn
+          (insert-file-contents-literally path nil 0 32)
+          (and (hermes-chat--image-kind (buffer-string)) t))
+      (file-error nil))))
+
+(defun hermes-chat--dnd-chat-buffer (buffer)
+  "Return the chat buffer that a drop on BUFFER attaches to, or nil.
+A chat buffer is its own target.  Any other Hermes view has no composer, so it
+targets the sole open chat buffer; with several open the drop is ambiguous and
+gets no target."
+  (let ((mode (and (buffer-live-p buffer)
+                   (buffer-local-value 'major-mode buffer))))
+    (cond
+     ((null mode) nil)
+     ((provided-mode-derived-p mode 'hermes-chat-mode) buffer)
+     ((string-prefix-p "hermes" (symbol-name mode))
+      (let ((chats (seq-filter (lambda (candidate)
+                                 (and (buffer-live-p candidate)
+                                      (provided-mode-derived-p
+                                       (buffer-local-value 'major-mode candidate)
+                                       'hermes-chat-mode)))
+                               (buffer-list))))
+        (and (null (cdr chats)) (car chats)))))))
+
+(defun hermes-chat--dnd-handle-multiple-urls (orig window urls action)
+  "Attach image files dropped in URLS onto the chat displayed in WINDOW.
+Call ORIG for every drop this does not claim, so ordinary drag and drop keeps
+working everywhere else."
+  (let ((target (and hermes-chat-image-drag-and-drop
+                     (windowp window)
+                     (hermes-chat--dnd-chat-buffer (window-buffer window)))))
+    (if (null target)
+        (funcall orig window urls action)
+      (let ((attached 0))
+        (with-current-buffer target
+          (dolist (url urls)
+            (let ((path (hermes-chat--dnd-path url)))
+              (when (and path (hermes-chat--dnd-image-file-p path))
+                (hermes-chat-attach-image-file path)
+                (setq attached (1+ attached))))))
+        (if (> attached 0)
+            'copy
+          (funcall orig window urls action))))))
+
+(when (fboundp 'dnd-handle-multiple-urls)
+  (advice-add 'dnd-handle-multiple-urls :around
+              #'hermes-chat--dnd-handle-multiple-urls))
 
 (defun hermes-chat-remove-image (index)
   "Remove the one-based INDEX image from the local draft only."
