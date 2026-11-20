@@ -292,7 +292,7 @@
                    "*local@coder: [emacs-hermes]*"))))
 
 (ert-deftest hermes-chat-create-uses-project-canonical-title ()
-  "Fresh dashboard sessions use a canonical title from the current project."
+  "A fresh session is created untitled unless the canonical label is opted in."
   (let ((client (hermes-test--dashboard-client)) created-title)
     (cl-letf (((symbol-function 'current-time)
                (lambda () (encode-time 45 30 18 7 8 2026 t)))
@@ -315,8 +315,12 @@
       (hermes-test-with-chat-buffer
        (insert "hello")
        (hermes-chat-send)
-       (should (equal created-title
-                      "emacs-hermes--20260807T183045.000000Z--emacs"))))))
+       (should-not created-title))
+      ;; Opting back in restores the canonical project label.
+      (with-temp-buffer
+        (let ((hermes-chat-let-server-name-sessions nil))
+          (should (equal (hermes-chat--dashboard-create-title)
+                         "emacs-hermes--20260807T183045.000000Z--emacs")))))))
 
 (ert-deftest hermes-chat-prompts-profile-and-names-buffer ()
   "M-x hermes-chat reads a profile and names the buffer after it."
