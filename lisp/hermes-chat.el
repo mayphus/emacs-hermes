@@ -100,6 +100,7 @@ header still reports what the turn is doing.  Toggle with
   :type 'boolean
   :group 'hermes)
 
+;;;###autoload
 (defun hermes-chat-toggle-tool-calls ()
   "Toggle whether the transcript shows a row for every tool call."
   (interactive)
