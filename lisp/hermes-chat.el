@@ -92,6 +92,20 @@ which also keeps the auto-titler from ever replacing it."
   :type 'boolean
   :group 'hermes)
 
+(defcustom hermes-chat-show-tool-calls nil
+  "Whether the transcript shows a row for every tool the agent runs.
+Nil keeps tool rows out of the buffer, live and in resumed history; the
+header still reports what the turn is doing.  See
+`hermes-chat-toggle-tool-calls'."
+  :type 'boolean
+  :group 'hermes)
+
+(defun hermes-chat-toggle-tool-calls ()
+  "Toggle whether the transcript shows a row for every tool call."
+  (interactive)
+  (setq hermes-chat-show-tool-calls (not hermes-chat-show-tool-calls))
+  (message "Hermes tool rows %s" (if hermes-chat-show-tool-calls "on" "off")))
+
 (defface hermes-chat-user-input
   '((t :inherit highlight))
   "Face for submitted user turns in the chat transcript."
@@ -314,8 +328,12 @@ line."
     ((or 'progress 'tool 'commentary 'diff 'unknown) t)))
 
 (defun hermes-chat--turn-entry-effect (event)
-  "Return an (upsert-entry . EVENT) transcript effect for EVENT, or nil.  Pure."
+  "Return an (upsert-entry . EVENT) transcript effect for EVENT, or nil.  Pure.
+A tool row is only a transcript line when `hermes-chat-show-tool-calls'
+is set; the header shows the activity either way."
   (and (hermes-chat--transcript-event-p event)
+       (or hermes-chat-show-tool-calls
+           (not (eq (plist-get event :type) 'tool)))
        (cons 'upsert-entry event)))
 
 (defun hermes-chat--turn-session-info-effects (event)
@@ -2221,6 +2239,22 @@ visible while reading."
        (message "Hermes: %s" notice)
        (hermes-chat--read-raw-profile notice)))))
 
+(defun hermes-chat--history-tool-entry (message)
+  "Return the tool row for history MESSAGE."
+  (let ((entry (hermes-chat--make-entry
+                'tool
+                (hermes-chat--tool-head
+                 (or (hermes-transport--scalar-string
+                      (hermes-transport--get message 'name))
+                     "tool")
+                 (hermes-transport--scalar-string
+                  (hermes-transport--get message 'context)))
+                'done)))
+    (if-let* ((call (hermes-transport--non-empty-string
+                     (hermes-transport--get message 'tool_call_id))))
+        (plist-put entry :tool-call-id call)
+      entry)))
+
 (defun hermes-chat--history-entry (message)
   "Return a chat entry for a resumed history MESSAGE, or nil to skip it.
 Use the backend's display projection; hidden rows return nil."
@@ -2240,20 +2274,7 @@ Use the backend's display projection; hidden rows return nil."
                     (plist-put entry :row-id row-id)
                   entry))))
         ("assistant" (and text (hermes-chat--make-entry 'assistant text 'done)))
-        ("tool"
-         (let ((entry (hermes-chat--make-entry
-                       'tool
-                       (hermes-chat--tool-head
-                        (or (hermes-transport--scalar-string
-                             (hermes-transport--get message 'name))
-                            "tool")
-                        (hermes-transport--scalar-string
-                         (hermes-transport--get message 'context)))
-                       'done)))
-           (if-let* ((call (hermes-transport--non-empty-string
-                            (hermes-transport--get message 'tool_call_id))))
-               (plist-put entry :tool-call-id call)
-             entry)))))))
+        ("tool" (hermes-chat--history-tool-entry message))))))
 
 (defun hermes-chat--history-entries (message)
   "Return the chat entries for a resumed history MESSAGE, in order.
@@ -2267,9 +2288,13 @@ An assistant row's reasoning precedes its reply as a collapsed entry."
                     (hermes-chat--history-entry message)))))
 
 (defun hermes-chat--render-history (messages)
-  "Insert prior MESSAGES (from `session.resume') into the transcript."
+  "Insert prior MESSAGES (from `session.resume') into the transcript.
+Tool rows are left out unless `hermes-chat-show-tool-calls' is set."
   (hermes-chat--render-history-entries
-   (mapcan #'hermes-chat--history-entries messages)))
+   (seq-remove (lambda (entry)
+                 (and (not hermes-chat-show-tool-calls)
+                      (hermes-chat--entry-tool-call-id entry)))
+               (mapcan #'hermes-chat--history-entries messages))))
 
 (defun hermes-chat--newest-turn ()
   "Return (USER-NODE . REPLY-NODES) for the transcript's newest turn.
@@ -2741,6 +2766,15 @@ history again changes nothing."
         (puthash node turn turn-of)
         (when-let* ((call (hermes-chat--entry-tool-call-id (ewoc-data node))))
           (unless (gethash call by-call) (puthash call node by-call)))))
+    ;; A past tool row survives only while a live card still anchors to it.
+    (unless hermes-chat-show-tool-calls
+      (dolist (want wanted)
+        (setf (cdr want)
+              (seq-filter
+               (lambda (entry)
+                 (let ((call (hermes-chat--entry-tool-call-id entry)))
+                   (or (null call) (gethash call by-call))))
+               (cdr want)))))
     (dolist (want wanted)
       (let ((turn (or (and (car want) (gethash (car want) by-row))
                       (seq-some (lambda (entry)

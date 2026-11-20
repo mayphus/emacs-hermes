@@ -130,7 +130,8 @@
 
 (ert-deftest hermes-chat-resume-renders-prior-messages ()
   "Resuming renders history and later backend-owned turns without duplicates."
-  (let ((client (hermes-test--dashboard-client)))
+  (let ((client (hermes-test--dashboard-client))
+        (hermes-chat-show-tool-calls t))
     (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) client))
               ((symbol-function 'hermes-notifications-notify) #'ignore)
@@ -1966,6 +1967,34 @@ the second pass keeps the very same nodes and text."
          (copy-hash-table hermes-chat--nodes))
         (should (< (- (float-time) start) 1.0)))
       (should (= (length (hermes-chat--entries)) 801)))))
+
+
+(ert-deftest hermes-chat-history-hides-tool-rows-by-default ()
+  "A past tool row reaches the transcript only when tool calls are shown."
+  (hermes-test-with-rewind-chat (_submits _reads _prompts)
+    (let ((hermes-chat-show-tool-calls nil))
+      (hermes-chat--render-history
+       '(((role . "user") (text . "Q"))
+         ((role . "tool") (name . "terminal") (context . "$ ls")
+          (tool_call_id . "call-1"))
+         ((role . "assistant") (text . "A"))))
+      (should-not (seq-find (lambda (entry) (eq (plist-get entry :role) 'tool))
+                            (hermes-chat--entries))))
+    (let ((hermes-chat-show-tool-calls t))
+      (hermes-chat--render-history
+       '(((role . "tool") (name . "terminal") (context . "$ pwd")
+          (tool_call_id . "call-2"))))
+      (should (seq-find (lambda (entry) (eq (plist-get entry :role) 'tool))
+                        (hermes-chat--entries))))))
+
+(ert-deftest hermes-chat-live-tool-rows-follow-the-option ()
+  "A live tool event adds a transcript row only when tool calls are shown."
+  (let ((event '(:type tool :name "terminal" :tool-call-id "call-2"
+                 :content "$ ls")))
+    (let ((hermes-chat-show-tool-calls nil))
+      (should-not (hermes-chat--turn-entry-effect event)))
+    (let ((hermes-chat-show-tool-calls t))
+      (should (eq (car (hermes-chat--turn-entry-effect event)) 'upsert-entry)))))
 
 
 (provide 'hermes-chat-history-tests)
